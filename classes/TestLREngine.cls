@@ -1,11 +1,9 @@
 /*
 Copyright (c) tgerm.com
 All rights reserved.
-
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions
 are met:
-
 1. Redistributions of source code must retain the above copyright
    notice, this list of conditions and the following disclaimer.
 2. Redistributions in binary form must reproduce the above copyright
@@ -13,7 +11,6 @@ are met:
    documentation and/or other materials provided with the distribution.
 3. The name of the author may not be used to endorse or promote products
    derived from this software without specific prior written permission.
-
 THIS SOFTWARE IS PROVIDED BY THE AUTHOR "AS IS" AND ANY EXPRESS OR
 IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
 OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
@@ -28,7 +25,6 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /**
 	This test case uses standard objects Opportunity and Account for the purpose of testing. This is done to avoid
 	any dependency on custom objects and keep the code base simple and easy to deploy in new orgs.
-	
 */
 @isTest
 private class TestLREngine {
@@ -533,5 +529,65 @@ private class TestLREngine {
          catch (Exception e) {
             System.assertEquals('Only Date/DateTime/Time/Numeric fields are allowed for Sum, Max, Min and Avg', e.getMessage());
          }
-    }    
+    }
+    
+     static testMethod void testRIncludeNulls() {
+
+		acc1 = new Account(Name = 'Acc1');
+		insert acc1;
+	           
+         Opportunity o1Acc1 = new Opportunity( 
+ 												Name = 'o1Acc1', 
+                                                AccountId = acc1.Id,
+                                                Amount = 100.00,
+                                                CloseDate = System.today(),
+                                                StageName = 'test'
+         									);
+         Opportunity o2Acc1 = new Opportunity(
+ 												Name = 'o2Acc1',
+                                                AccountId = acc1.Id,
+                                                Amount = 300.00,
+                                                CloseDate = System.today().addMonths(1),
+                                                StageName = 'test'
+         									);
+
+         Opportunity o3Acc1 = new Opportunity(
+ 												Name = 'o3Acc1',
+                                                //AccountId = acc1.Id,
+                                                Amount = 50.00,
+                                                CloseDate = System.today().addMonths(-1),
+                                                StageName = 'test'
+         									);
+
+		 detailRecords = new Opportunity[] {o1Acc1, o2Acc1, o3Acc1};
+         LREngine.Context ctx = new LREngine.Context(Account.SobjectType, 
+                                                Opportunity.SobjectType, 
+                                                Schema.SObjectType.Opportunity.fields.AccountId);
+      
+         ctx.add(
+                new LREngine.RollupSummaryField(
+                                                Schema.SObjectType.Account.fields.AnnualRevenue,
+                                                Schema.SObjectType.Opportunity.fields.Id,
+                                                LREngine.RollupOperation.Count
+                                             ));                 
+
+		 //New suggested default functionality - no need to post/pre-process detailRecords or apply/append to where clause when nulls are introduced into the detailRecords.
+         Map<id,sobject> mastersMap1 = new Map<id,sobject>(LREngine.rollUp(ctx, detailRecords));
+         system.assertEquals(1,mastersMap1.size(),'although detailRecords contain a null lookup it WILL NOT return an aggregate of nulls');
+         system.assertEquals(false,mastersMap1.containsKey(Null),'although detailRecords contain a null lookup it WILL NOT attempt to aggregate all nulls');
+         
+
+         //TEST Original functionality
+         ctx.includeNulls=true;
+         sobject[] masters2 = LREngine.rollUp(ctx, detailRecords); 
+         system.assertEquals(2,masters2.size(),'since detailRecords contain a null lookup it WILL return an aggregate all nulls');
+         try {
+         	Map<id,sobject> mastersMap2 = new Map<id,sobject>(masters2);
+         }
+         catch(Exception ex) {
+         	System.assertEquals(true, ex.getMessage().startsWith('Row with null Id at index'));
+         }
+
+    }   
+        
 }
